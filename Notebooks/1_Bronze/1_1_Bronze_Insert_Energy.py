@@ -1,32 +1,48 @@
 # Databricks notebook source
-
-# Importa a biblioteca requests para fazer requisições HTTP
+import sys
+import os
 import requests
-# Importa funções personalizadas para manipulação de DataFrames
 import Module.DataFrame_Functions as dff
 
 # COMMAND ----------
-# URL do dataset de energia disponível publicamente no GitHub
+
+spark.sql("USE CATALOG our_world_in_data")
+spark.sql("CREATE SCHEMA IF NOT EXISTS bronze_layer")
+spark.sql("CREATE VOLUME IF NOT EXISTS our_world_in_data.bronze_layer.landing_zone;")
+
+# COMMAND ----------
+
+catalog = "our_world_in_data"
+schema = "bronze_layer"
+volume = "landing_zone"
+file_name = "energy_data.csv"
+path_volume = f"/Volumes/{catalog}/{schema}/{volume}/{file_name}"
 url = 'https://raw.githubusercontent.com/owid/energy-data/master/owid-energy-data.csv'
 
 # COMMAND ----------
-# Faz o download do arquivo CSV usando uma requisição HTTP
+
+# DBTITLE 1,Cell 4
 response = requests.get(url)
 
-# COMMAND ----------
-# Salva o conteúdo baixado como um arquivo temporário no DBFS
-dbutils.fs.put("/tmp/energy_data.csv", response.text, overwrite=True)
+if response.status_code == 200:
+    dbutils.fs.put(path_volume, response.content.decode('utf-8'), overwrite=True)
 
 # COMMAND ----------
-# Lê o arquivo CSV salvo como um DataFrame Spark, inferindo o schema e usando o cabeçalho
-df = spark.read.csv("/tmp/energy_data.csv", header=True, inferSchema=True)
+
+df = spark.read.csv(path_volume, header=True, inferSchema=None)
+df.display()
 
 # COMMAND ----------
-# Aplica função personalizada para adicionar colunas de ingestão ao DataFrame
+
 energy_bronze_df = dff.create_ingestions_columns(df, 'gitrawcontent')
+energy_bronze_df.display()
 
 # COMMAND ----------
-# Escreve o DataFrame processado em uma tabela Delta no Databricks, camada bronze
+
+energy_bronze_df.printSchema()
+
+# COMMAND ----------
+
 (energy_bronze_df.write
     .format("delta")
     .mode("overwrite")
